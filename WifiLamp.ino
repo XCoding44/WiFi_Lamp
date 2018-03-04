@@ -4,25 +4,28 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 
-#define PIN /* YOUR DATA PIN HERE */
-#define LENGTH_LED /* YOUR STRIP LENGTH HERE */
-#define LAMP_NAME /* THE NAME OF THE LAMP (String) */
-
-const char* ssid = "your-ssid";
-const char* password = "your-password";
+#define PIN 14
+#define LENGTH_LED 14
 
 ESP8266WebServer server(80);
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(LENGTH_LED, PIN);
+int gradStep = 0;
+bool gradient = false;
+uint32_t cFrom; uint32_t cTo;
 
 void handleRoot() {
   String rootMsg = "";
   rootMsg += "<html><head><meta charset='utf-8'></head>";
-  rootMsg += "<body><h1 style='text-align: center;'>Lamp of " + LAMP_NAME + " :</h1>";
+  rootMsg += "<body><h1 style='text-align: center;'>Lamp of Thomas :</h1>";
   rootMsg += "<fieldset><legend>Colors</legend><label for='colorc' style='margin-right: 100px;'>Center color : </label><input type='color' value='#ffffff' id='colorc'><br>";
   rootMsg += "<label for='colorg' style='margin-right: 100px;'>Left color : </label><input type='color' value='#ffffff' id='colorg'><br>";
   rootMsg += "<label for='colord' style='margin-right: 100px;'>Right color: </label><input type='color' value='#ffffff' id='colord'></fieldset><br>";
+  rootMsg += "<fieldset><legend>Colors</legend><label for='cFrom' style='margin-right: 100px;'>From : </label><input type='color' value='#ffffff' id='cFrom'><br>";
+  rootMsg += "<label for='cTo' style='margin-right: 100px;'>To : </label><input type='color' value='#ffffff' id='cTo'></fieldset><br>";
   rootMsg += "<input type='button' onclick='sendColor()' value='Change colors'>";
-  rootMsg += "<script type='text/javascript'>function sendColor() {var cc = document.getElementById('colorc').value.slice(1); var cg = document.getElementById('colorg').value.slice(1); var cd = document.getElementById('colord').value.slice(1); window.location.href='http://" + WiFi.localIP().toString() + "/setcolor?cc=' + cc + '&cd=' + cd + '&cg=' + cg;}</script>";
+  rootMsg += "<input type'button' onclick='sendGradient()' value='Launch gradient'>";
+  rootMsg += "<script type='text/javascript'>function sendColor() {var cc = document.getElementById('colorc').value.slice(1); var cg = document.getElementById('colorg').value.slice(1); var cd = document.getElementById('colord').value.slice(1); window.location.href='http://" + WiFi.localIP().toString() + "/setcolor?cc=' + cc + '&cd=' + cd + '&cg=' + cg;}";
+  rootMsg += "function sendGradient() {var cFrom = document.getElementById('cFrom').value.slice(1); var cTo = document.getElementById('cTo').value.slice(1); window.location.href='http://" + WiFi.localIP().toString() + "/setcolor?cFrom=' + cFrom + '&cTo=' + cTo;}</script>";
   rootMsg += "</body></html>";
   
   server.send(200, "text/html", rootMsg);
@@ -31,6 +34,8 @@ void handleRoot() {
 void handleChange() {
   String msg = "";
   if (server.arg("cc") != "" && server.arg("cd") != "" && server.arg("cg") != "") {
+    gradient = false;
+    
     for (int n = 0; n < 6; n++) {
       uint32_t colorC = strtoul(server.arg("cc").c_str(), NULL, 16);
       strip.setPixelColor(n, colorC);
@@ -47,6 +52,25 @@ void handleChange() {
     }
     strip.show();
     msg = "Success ! The colors are changed !";
+  }
+  else if (server.arg("cFrom") != "" && server.arg("cTo") != "") {    
+    cFrom = strtoul(server.arg("cFrom").c_str(), NULL, 16);
+    cTo = strtoul(server.arg("cTo").c_str(), NULL, 16);
+
+    if (cFrom - cTo > 0) {
+      gradStep = -1;
+      gradient = true;
+      msg = "Success ! The gradient is changed !";
+    }
+    else if (cFrom - cTo < 0) {
+      gradStep = 1;
+      gradient = true;
+      msg = "Success ! The gradient is changed !";
+    }
+    else {
+      gradient = false;
+      msg = "Fail ! The gradient is not moving...";
+    }
   }
   else {
     msg = "PLEASE ! Don't touch the URL <a href=\"" + (String)WiFi.localIP() + "\">Main page</a>";
@@ -87,13 +111,8 @@ void bootSequenceLight() {
   strip.show();
 }
 
-void setup(void){
-  WiFi.begin(ssid, password);
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-  }
+void setup(){
+  boolean result = WiFi.softAP("MyESP12E", "mamanjesuisla");
   
   server.on("/", handleRoot);
 
@@ -107,6 +126,17 @@ void setup(void){
   bootSequenceLight();
 }
 
-void loop(void){
+void loop(){
   server.handleClient();
+
+  if (gradient) {
+    uint32_t cTmp = cFrom + gradStep;
+    if (cTmp == cTo)
+      gradStep *= -1;
+
+    for(int n=0; n < LENGTH_LED; n++) {
+      strip.setPixelColor(n, cTmp);
+    }
+    strip.show();
+  }
 }
